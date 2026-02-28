@@ -228,3 +228,14 @@ These approaches do not guarantee minimal transactions.
 - Deploy application to Vercel
 - Connect PostgreSQL database
 - Perform end-to-end testing
+
+---
+
+## 14. Team Roles & Responsibilities
+
+| Member Name | Role | Responsibilities |
+|-------------|------|-----------------|
+| Rudransh Gupta | System Architect & Optimization Lead | System design, database schema, optimization algorithm, backend logic |
+| Rounak Kumar Saw | Backend Developer | API implementation, database integration, testing |
+| Priyanshu Verma | Frontend Developer | UI design, page structure, API integration |
+

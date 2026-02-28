@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface Balance {
     userId: string;
@@ -27,6 +27,8 @@ interface SettlementData {
     settlements: Settlement[];
 }
 
+const defaultForm = { description: "", amount: "", paidById: "" };
+
 export default function GroupBalancesPage({
     params,
 }: {
@@ -38,148 +40,298 @@ export default function GroupBalancesPage({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Modal state
+    const [modalOpen, setModalOpen] = useState(false);
+    const [form, setForm] = useState(defaultForm);
+    const [submitting, setSubmitting] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
+
     // Unwrap async params (Next.js 15+)
     useEffect(() => {
         params.then((p) => setGroupId(p.groupId));
     }, [params]);
 
+    const fetchData = useCallback(
+        (id: string) => {
+            setLoading(true);
+            setError(null);
+            Promise.all([
+                fetch(`/api/groups/${id}/balances`).then((r) => {
+                    if (!r.ok) throw new Error(`Balances: HTTP ${r.status}`);
+                    return r.json() as Promise<BalanceData>;
+                }),
+                fetch(`/api/groups/${id}/settlements`).then((r) => {
+                    if (!r.ok) throw new Error(`Settlements: HTTP ${r.status}`);
+                    return r.json() as Promise<SettlementData>;
+                }),
+            ])
+                .then(([bal, set]) => {
+                    setBalanceData(bal);
+                    setSettlementData(set);
+                })
+                .catch((err) => setError(err.message))
+                .finally(() => setLoading(false));
+        },
+        []
+    );
+
     useEffect(() => {
+        if (groupId) fetchData(groupId);
+    }, [groupId, fetchData]);
+
+    const openModal = () => {
+        setForm({ ...defaultForm, paidById: balanceData?.balances[0]?.userId ?? "" });
+        setFormError(null);
+        setModalOpen(true);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
         if (!groupId) return;
-
-        Promise.all([
-            fetch(`/api/groups/${groupId}/balances`).then((r) => {
-                if (!r.ok) throw new Error(`Balances: HTTP ${r.status}`);
-                return r.json() as Promise<BalanceData>;
-            }),
-            fetch(`/api/groups/${groupId}/settlements`).then((r) => {
-                if (!r.ok) throw new Error(`Settlements: HTTP ${r.status}`);
-                return r.json() as Promise<SettlementData>;
-            }),
-        ])
-            .then(([bal, set]) => {
-                setBalanceData(bal);
-                setSettlementData(set);
-            })
-            .catch((err) => setError(err.message))
-            .finally(() => setLoading(false));
-    }, [groupId]);
-
-    const balanceColor = (balance: number) => {
-        if (balance > 0) return "text-emerald-400";
-        if (balance < 0) return "text-red-400";
-        return "text-gray-500";
+        const amt = parseFloat(form.amount);
+        if (!form.description.trim() || isNaN(amt) || amt <= 0 || !form.paidById) {
+            setFormError("Please fill in all fields with valid values.");
+            return;
+        }
+        setSubmitting(true);
+        setFormError(null);
+        try {
+            const res = await fetch("/api/expenses", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    description: form.description.trim(),
+                    amount: amt,
+                    paidById: form.paidById,
+                    groupId,
+                }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error ?? `HTTP ${res.status}`);
+            }
+            setModalOpen(false);
+            fetchData(groupId); // refresh balances + settlements
+        } catch (err: unknown) {
+            setFormError(err instanceof Error ? err.message : "Failed to add expense");
+        } finally {
+            setSubmitting(false);
+        }
     };
 
-    const balanceLabel = (balance: number) => {
-        if (balance > 0) return `gets back ₹${balance.toFixed(2)}`;
-        if (balance < 0) return `owes ₹${Math.abs(balance).toFixed(2)}`;
-        return "settled up";
-    };
+    const balanceColor = (b: number) =>
+        b > 0 ? "text-emerald-400" : b < 0 ? "text-red-400" : "text-gray-500";
+
+    const balanceLabel = (b: number) =>
+        b > 0
+            ? `gets back ₹${b.toFixed(2)}`
+            : b < 0
+                ? `owes ₹${Math.abs(b).toFixed(2)}`
+                : "settled up";
 
     return (
-        <main className="min-h-screen bg-gray-950 text-white px-6 py-10">
-            <div className="max-w-2xl mx-auto">
+        <>
+            <main className="min-h-screen bg-gray-950 text-white px-6 py-10">
+                <div className="max-w-2xl mx-auto">
 
-                {/* Back link */}
-                <Link
-                    href="/dashboard"
-                    className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors mb-8"
-                >
-                    ← Back to groups
-                </Link>
+                    {/* Back link */}
+                    <Link
+                        href="/dashboard"
+                        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors mb-8"
+                    >
+                        ← Back to groups
+                    </Link>
 
-                {/* Loading skeleton */}
-                {loading && (
-                    <div className="space-y-4">
-                        <div className="h-8 w-48 rounded-lg bg-gray-800 animate-pulse" />
-                        <div className="h-28 rounded-xl bg-gray-800 animate-pulse" />
-                        <div className="space-y-3">
+                    {/* Loading skeleton */}
+                    {loading && (
+                        <div className="space-y-4">
+                            <div className="h-8 w-48 rounded-lg bg-gray-800 animate-pulse" />
+                            <div className="h-28 rounded-xl bg-gray-800 animate-pulse" />
                             {[1, 2, 3].map((i) => (
                                 <div key={i} className="h-16 rounded-xl bg-gray-800 animate-pulse" />
                             ))}
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* Error */}
-                {!loading && error && (
-                    <div className="rounded-xl border border-red-800 bg-red-950/40 px-5 py-4 text-red-300 text-sm">
-                        Failed to load group: {error}
-                    </div>
-                )}
-
-                {/* Content */}
-                {!loading && !error && balanceData && settlementData && (
-                    <>
-                        {/* Header */}
-                        <div className="mb-8">
-                            <h1 className="text-2xl font-bold tracking-tight">Group Balances</h1>
-                            <p className="text-xs text-gray-600 mt-1 font-mono">{balanceData.groupId}</p>
+                    {/* Error */}
+                    {!loading && error && (
+                        <div className="rounded-xl border border-red-800 bg-red-950/40 px-5 py-4 text-red-300 text-sm">
+                            Failed to load group: {error}
                         </div>
+                    )}
 
-                        {/* Summary card */}
-                        <div className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-5 mb-6 grid grid-cols-2 gap-4">
-                            <div>
-                                <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Total Expenses</p>
-                                <p className="text-2xl font-semibold">₹{balanceData.totalExpenses.toFixed(2)}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Per Person</p>
-                                <p className="text-2xl font-semibold">₹{balanceData.perPersonShare.toFixed(2)}</p>
-                            </div>
-                        </div>
-
-                        {/* Member balances */}
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-3">Members</p>
-                        <ul className="space-y-3 mb-8">
-                            {balanceData.balances.map((member) => (
-                                <li
-                                    key={member.userId}
-                                    className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 px-5 py-4"
+                    {/* Content */}
+                    {!loading && !error && balanceData && settlementData && (
+                        <>
+                            {/* Header */}
+                            <div className="flex items-start justify-between mb-8">
+                                <div>
+                                    <h1 className="text-2xl font-bold tracking-tight">Group Balances</h1>
+                                    <p className="text-xs text-gray-600 mt-1 font-mono">{balanceData.groupId}</p>
+                                </div>
+                                <button
+                                    onClick={openModal}
+                                    className="rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 transition-colors px-4 py-2 text-sm font-medium text-white"
                                 >
-                                    <div>
-                                        <p className="font-medium text-white">{member.name}</p>
-                                        <p className={`text-sm mt-0.5 ${balanceColor(member.balance)}`}>
-                                            {balanceLabel(member.balance)}
-                                        </p>
-                                    </div>
-                                    <span className={`text-lg font-semibold tabular-nums ${balanceColor(member.balance)}`}>
-                                        {member.balance > 0 ? "+" : ""}
-                                        ₹{member.balance.toFixed(2)}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-
-                        {/* Settlement plan */}
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-3">Settlement Plan</p>
-
-                        {settlementData.settlements.length === 0 ? (
-                            <div className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-6 text-center text-gray-500 text-sm">
-                                ✓ All settled up
+                                    + Add Expense
+                                </button>
                             </div>
-                        ) : (
-                            <ul className="space-y-3">
-                                {settlementData.settlements.map((s, i) => (
+
+                            {/* Summary card */}
+                            <div className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-5 mb-6 grid grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Total Expenses</p>
+                                    <p className="text-2xl font-semibold">₹{balanceData.totalExpenses.toFixed(2)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Per Person</p>
+                                    <p className="text-2xl font-semibold">₹{balanceData.perPersonShare.toFixed(2)}</p>
+                                </div>
+                            </div>
+
+                            {/* Members */}
+                            <p className="text-xs text-gray-500 uppercase tracking-widest mb-3">Members</p>
+                            <ul className="space-y-3 mb-8">
+                                {balanceData.balances.map((member) => (
                                     <li
-                                        key={i}
+                                        key={member.userId}
                                         className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 px-5 py-4"
                                     >
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <span className="font-medium text-red-400">{s.from}</span>
-                                            <span className="text-gray-600">→</span>
-                                            <span className="font-medium text-emerald-400">{s.to}</span>
+                                        <div>
+                                            <p className="font-medium text-white">{member.name}</p>
+                                            <p className={`text-sm mt-0.5 ${balanceColor(member.balance)}`}>
+                                                {balanceLabel(member.balance)}
+                                            </p>
                                         </div>
-                                        <span className="text-white font-semibold tabular-nums">
-                                            ₹{s.amount.toFixed(2)}
+                                        <span className={`text-lg font-semibold tabular-nums ${balanceColor(member.balance)}`}>
+                                            {member.balance > 0 ? "+" : ""}₹{member.balance.toFixed(2)}
                                         </span>
                                     </li>
                                 ))}
                             </ul>
-                        )}
-                    </>
-                )}
-            </div>
-        </main>
+
+                            {/* Settlement plan */}
+                            <p className="text-xs text-gray-500 uppercase tracking-widest mb-3">Settlement Plan</p>
+                            {settlementData.settlements.length === 0 ? (
+                                <div className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-6 text-center text-gray-500 text-sm">
+                                    ✓ All settled up
+                                </div>
+                            ) : (
+                                <ul className="space-y-3">
+                                    {settlementData.settlements.map((s, i) => (
+                                        <li
+                                            key={i}
+                                            className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 px-5 py-4"
+                                        >
+                                            <div className="flex items-center gap-2 text-sm">
+                                                <span className="font-medium text-red-400">{s.from}</span>
+                                                <span className="text-gray-600">→</span>
+                                                <span className="font-medium text-emerald-400">{s.to}</span>
+                                            </div>
+                                            <span className="text-white font-semibold tabular-nums">
+                                                ₹{s.amount.toFixed(2)}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </>
+                    )}
+                </div>
+            </main>
+
+            {/* Modal */}
+            {modalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+                    onClick={(e) => e.target === e.currentTarget && setModalOpen(false)}
+                >
+                    <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900 p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-lg font-semibold">Add Expense</h2>
+                            <button
+                                onClick={() => setModalOpen(false)}
+                                className="text-gray-500 hover:text-gray-300 transition-colors text-xl leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            {/* Description */}
+                            <div>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
+                                    Description
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.description}
+                                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                                    placeholder="Hotel, dinner, tickets…"
+                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                                />
+                            </div>
+
+                            {/* Amount */}
+                            <div>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
+                                    Amount (₹)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={form.amount}
+                                    onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                                    placeholder="0.00"
+                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                                />
+                            </div>
+
+                            {/* Paid by */}
+                            <div>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
+                                    Paid by
+                                </label>
+                                <select
+                                    value={form.paidById}
+                                    onChange={(e) => setForm((f) => ({ ...f, paidById: e.target.value }))}
+                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors"
+                                >
+                                    {balanceData?.balances.map((m) => (
+                                        <option key={m.userId} value={m.userId}>
+                                            {m.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Inline error */}
+                            {formError && (
+                                <p className="text-red-400 text-xs">{formError}</p>
+                            )}
+
+                            {/* Actions */}
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setModalOpen(false)}
+                                    className="flex-1 rounded-lg border border-gray-700 py-2.5 text-sm text-gray-400 hover:border-gray-500 hover:text-white transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={submitting}
+                                    className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors py-2.5 text-sm font-medium text-white"
+                                >
+                                    {submitting ? "Adding…" : "Add Expense"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }

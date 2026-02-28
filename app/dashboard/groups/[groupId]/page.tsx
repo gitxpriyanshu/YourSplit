@@ -81,7 +81,9 @@ export default function GroupBalancesPage({
     const [modalOpen, setModalOpen] = useState(false);
     const [form, setForm] = useState(defaultForm);
     const [submitting, setSubmitting] = useState(false);
-    const [formError, setFormError] = useState<string | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<{
+        description?: string; amount?: string; paidById?: string; server?: string;
+    }>({});
 
     // Member modal state
     const [memberModalOpen, setMemberModalOpen] = useState(false);
@@ -137,7 +139,7 @@ export default function GroupBalancesPage({
 
     const openModal = () => {
         setForm({ ...defaultForm, paidById: balanceData?.balances[0]?.userId ?? "" });
-        setFormError(null);
+        setFieldErrors({});
         setModalOpen(true);
     };
 
@@ -193,13 +195,17 @@ export default function GroupBalancesPage({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!groupId) return;
+
+        // Per-field validation
         const amt = parseFloat(form.amount);
-        if (!form.description.trim() || isNaN(amt) || amt <= 0 || !form.paidById) {
-            setFormError("Please fill in all fields with valid values.");
-            return;
-        }
+        const errs: { description?: string; amount?: string; paidById?: string } = {};
+        if (!form.description.trim()) errs.description = "Description is required.";
+        if (!form.amount || isNaN(amt) || amt <= 0) errs.amount = "Enter a valid amount greater than 0.";
+        if (!form.paidById) errs.paidById = "Select who paid.";
+        if (Object.keys(errs).length > 0) { setFieldErrors(errs); return; }
+
         setSubmitting(true);
-        setFormError(null);
+        setFieldErrors({});
         try {
             const res = await fetch("/api/expenses", {
                 method: "POST",
@@ -216,10 +222,11 @@ export default function GroupBalancesPage({
                 throw new Error(body.error ?? `HTTP ${res.status}`);
             }
             setModalOpen(false);
+            setForm(defaultForm);  // explicit clear
             setToast(`"${form.description.trim()}" added successfully`);
-            fetchData(groupId, true); // refresh without full skeleton
+            fetchData(groupId, true);
         } catch (err: unknown) {
-            setFormError(err instanceof Error ? err.message : "Failed to add expense");
+            setFieldErrors({ server: err instanceof Error ? err.message : "Failed to add expense" });
         } finally {
             setSubmitting(false);
         }
@@ -427,46 +434,69 @@ export default function GroupBalancesPage({
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">Description</label>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
+                                    Description <span className="text-red-500">*</span>
+                                </label>
                                 <input
                                     type="text"
                                     value={form.description}
-                                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                                    onChange={(e) => {
+                                        setForm((f) => ({ ...f, description: e.target.value }));
+                                        if (fieldErrors.description) setFieldErrors((fe) => ({ ...fe, description: undefined }));
+                                    }}
                                     placeholder="Hotel, dinner, tickets…"
                                     disabled={submitting}
-                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                                    autoFocus
+                                    className={`w-full rounded-lg border bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none transition-colors disabled:opacity-50 ${fieldErrors.description ? "border-red-500 focus:border-red-400" : "border-gray-700 focus:border-indigo-500"
+                                        }`}
                                 />
+                                {fieldErrors.description && <p className="mt-1 text-xs text-red-400">{fieldErrors.description}</p>}
                             </div>
 
                             <div>
-                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">Amount (₹)</label>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
+                                    Amount (₹) <span className="text-red-500">*</span>
+                                </label>
                                 <input
                                     type="number"
                                     min="0.01"
                                     step="0.01"
                                     value={form.amount}
-                                    onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                                    onChange={(e) => {
+                                        setForm((f) => ({ ...f, amount: e.target.value }));
+                                        if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: undefined }));
+                                    }}
                                     placeholder="0.00"
                                     disabled={submitting}
-                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                                    className={`w-full rounded-lg border bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none transition-colors disabled:opacity-50 ${fieldErrors.amount ? "border-red-500 focus:border-red-400" : "border-gray-700 focus:border-indigo-500"
+                                        }`}
                                 />
+                                {fieldErrors.amount && <p className="mt-1 text-xs text-red-400">{fieldErrors.amount}</p>}
                             </div>
 
                             <div>
-                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">Paid by</label>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
+                                    Paid by <span className="text-red-500">*</span>
+                                </label>
                                 <select
                                     value={form.paidById}
-                                    onChange={(e) => setForm((f) => ({ ...f, paidById: e.target.value }))}
+                                    onChange={(e) => {
+                                        setForm((f) => ({ ...f, paidById: e.target.value }));
+                                        if (fieldErrors.paidById) setFieldErrors((fe) => ({ ...fe, paidById: undefined }));
+                                    }}
                                     disabled={submitting}
-                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                                    className={`w-full rounded-lg border bg-gray-800 px-4 py-2.5 text-sm text-white focus:outline-none transition-colors disabled:opacity-50 ${fieldErrors.paidById ? "border-red-500 focus:border-red-400" : "border-gray-700 focus:border-indigo-500"
+                                        }`}
                                 >
+                                    <option value="" disabled>Select member…</option>
                                     {balanceData?.balances.map((m) => (
                                         <option key={m.userId} value={m.userId}>{m.name}</option>
                                     ))}
                                 </select>
+                                {fieldErrors.paidById && <p className="mt-1 text-xs text-red-400">{fieldErrors.paidById}</p>}
                             </div>
 
-                            {formError && <p className="text-red-400 text-xs">{formError}</p>}
+                            {fieldErrors.server && <p className="text-red-400 text-xs">{fieldErrors.server}</p>}
 
                             <div className="flex gap-3 pt-2">
                                 <button

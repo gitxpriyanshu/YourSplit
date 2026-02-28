@@ -169,3 +169,26 @@ These approaches do not guarantee minimal transactions.
 - Correct preservation of net balances
 - Time complexity efficiency (O(n log n))
 
+---
+
+## 8. Technology Stack
+
+### Frontend
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+
+### Backend
+- Next.js API Routes
+- TypeScript
+- Prisma ORM
+
+### ML/AI
+- Not applicable (Graph-based optimization algorithm implemented manually)
+
+### Database
+- PostgreSQL
+
+### Deployment
+- Vercel (Frontend + API)
+- PostgreSQL Cloud Provider (Supabase / Local during development)

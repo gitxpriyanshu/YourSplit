@@ -8,26 +8,52 @@ interface Balance {
     name: string;
     balance: number;
 }
-
 interface BalanceData {
     groupId: string;
     totalExpenses: number;
     perPersonShare: number;
     balances: Balance[];
 }
-
 interface Settlement {
     from: string;
     to: string;
     amount: number;
 }
-
 interface SettlementData {
     groupId: string;
     settlements: Settlement[];
 }
 
 const defaultForm = { description: "", amount: "", paidById: "" };
+
+function Spinner({ className = "" }: { className?: string }) {
+    return (
+        <svg
+            className={`animate-spin ${className}`}
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+        >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z" />
+        </svg>
+    );
+}
+
+function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+    useEffect(() => {
+        const t = setTimeout(onDone, 3000);
+        return () => clearTimeout(t);
+    }, [onDone]);
+    return (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white shadow-lg animate-fade-in">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            {message}
+        </div>
+    );
+}
 
 export default function GroupBalancesPage({
     params,
@@ -38,6 +64,7 @@ export default function GroupBalancesPage({
     const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
     const [settlementData, setSettlementData] = useState<SettlementData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Modal state
@@ -46,34 +73,37 @@ export default function GroupBalancesPage({
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
 
-    // Unwrap async params (Next.js 15+)
+    // Toast
+    const [toast, setToast] = useState<string | null>(null);
+
     useEffect(() => {
         params.then((p) => setGroupId(p.groupId));
     }, [params]);
 
-    const fetchData = useCallback(
-        (id: string) => {
-            setLoading(true);
-            setError(null);
-            Promise.all([
-                fetch(`/api/groups/${id}/balances`).then((r) => {
-                    if (!r.ok) throw new Error(`Balances: HTTP ${r.status}`);
-                    return r.json() as Promise<BalanceData>;
-                }),
-                fetch(`/api/groups/${id}/settlements`).then((r) => {
-                    if (!r.ok) throw new Error(`Settlements: HTTP ${r.status}`);
-                    return r.json() as Promise<SettlementData>;
-                }),
-            ])
-                .then(([bal, set]) => {
-                    setBalanceData(bal);
-                    setSettlementData(set);
-                })
-                .catch((err) => setError(err.message))
-                .finally(() => setLoading(false));
-        },
-        []
-    );
+    const fetchData = useCallback((id: string, isRefresh = false) => {
+        if (isRefresh) setRefreshing(true);
+        else setLoading(true);
+        setError(null);
+        Promise.all([
+            fetch(`/api/groups/${id}/balances`).then((r) => {
+                if (!r.ok) throw new Error(`Balances: HTTP ${r.status}`);
+                return r.json() as Promise<BalanceData>;
+            }),
+            fetch(`/api/groups/${id}/settlements`).then((r) => {
+                if (!r.ok) throw new Error(`Settlements: HTTP ${r.status}`);
+                return r.json() as Promise<SettlementData>;
+            }),
+        ])
+            .then(([bal, set]) => {
+                setBalanceData(bal);
+                setSettlementData(set);
+            })
+            .catch((err) => setError(err.message))
+            .finally(() => {
+                setLoading(false);
+                setRefreshing(false);
+            });
+    }, []);
 
     useEffect(() => {
         if (groupId) fetchData(groupId);
@@ -111,7 +141,8 @@ export default function GroupBalancesPage({
                 throw new Error(body.error ?? `HTTP ${res.status}`);
             }
             setModalOpen(false);
-            fetchData(groupId); // refresh balances + settlements
+            setToast(`"${form.description.trim()}" added successfully`);
+            fetchData(groupId, true); // refresh without full skeleton
         } catch (err: unknown) {
             setFormError(err instanceof Error ? err.message : "Failed to add expense");
         } finally {
@@ -121,7 +152,6 @@ export default function GroupBalancesPage({
 
     const balanceColor = (b: number) =>
         b > 0 ? "text-emerald-400" : b < 0 ? "text-red-400" : "text-gray-500";
-
     const balanceLabel = (b: number) =>
         b > 0
             ? `gets back ₹${b.toFixed(2)}`
@@ -131,10 +161,11 @@ export default function GroupBalancesPage({
 
     return (
         <>
+            {/* Toast */}
+            {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+
             <main className="min-h-screen bg-gray-950 text-white px-6 py-10">
                 <div className="max-w-2xl mx-auto">
-
-                    {/* Back link */}
                     <Link
                         href="/dashboard"
                         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors mb-8"
@@ -142,7 +173,7 @@ export default function GroupBalancesPage({
                         ← Back to groups
                     </Link>
 
-                    {/* Loading skeleton */}
+                    {/* Initial loading skeleton */}
                     {loading && (
                         <div className="space-y-4">
                             <div className="h-8 w-48 rounded-lg bg-gray-800 animate-pulse" />
@@ -160,9 +191,9 @@ export default function GroupBalancesPage({
                         </div>
                     )}
 
-                    {/* Content */}
+                    {/* Content — shown immediately, dims while refreshing */}
                     {!loading && !error && balanceData && settlementData && (
-                        <>
+                        <div className={`transition-opacity duration-200 ${refreshing ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
                             {/* Header */}
                             <div className="flex items-start justify-between mb-8">
                                 <div>
@@ -171,13 +202,15 @@ export default function GroupBalancesPage({
                                 </div>
                                 <button
                                     onClick={openModal}
-                                    className="rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 transition-colors px-4 py-2 text-sm font-medium text-white"
+                                    disabled={refreshing}
+                                    className="flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 transition-colors px-4 py-2 text-sm font-medium text-white"
                                 >
+                                    {refreshing ? <Spinner className="w-4 h-4" /> : null}
                                     + Add Expense
                                 </button>
                             </div>
 
-                            {/* Summary card */}
+                            {/* Summary */}
                             <div className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-5 mb-6 grid grid-cols-2 gap-4">
                                 <div>
                                     <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Total Expenses</p>
@@ -235,7 +268,7 @@ export default function GroupBalancesPage({
                                     ))}
                                 </ul>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
             </main>
@@ -244,39 +277,35 @@ export default function GroupBalancesPage({
             {modalOpen && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-                    onClick={(e) => e.target === e.currentTarget && setModalOpen(false)}
+                    onClick={(e) => e.target === e.currentTarget && !submitting && setModalOpen(false)}
                 >
                     <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900 p-6">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-lg font-semibold">Add Expense</h2>
                             <button
-                                onClick={() => setModalOpen(false)}
-                                className="text-gray-500 hover:text-gray-300 transition-colors text-xl leading-none"
+                                onClick={() => !submitting && setModalOpen(false)}
+                                className="text-gray-500 hover:text-gray-300 transition-colors text-xl leading-none disabled:opacity-40"
+                                disabled={submitting}
                             >
                                 ×
                             </button>
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            {/* Description */}
                             <div>
-                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
-                                    Description
-                                </label>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">Description</label>
                                 <input
                                     type="text"
                                     value={form.description}
                                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                                     placeholder="Hotel, dinner, tickets…"
-                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                                    disabled={submitting}
+                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
                                 />
                             </div>
 
-                            {/* Amount */}
                             <div>
-                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
-                                    Amount (₹)
-                                </label>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">Amount (₹)</label>
                                 <input
                                     type="number"
                                     min="0.01"
@@ -284,47 +313,42 @@ export default function GroupBalancesPage({
                                     value={form.amount}
                                     onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                                     placeholder="0.00"
-                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                                    disabled={submitting}
+                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
                                 />
                             </div>
 
-                            {/* Paid by */}
                             <div>
-                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">
-                                    Paid by
-                                </label>
+                                <label className="block text-xs text-gray-500 uppercase tracking-widest mb-1.5">Paid by</label>
                                 <select
                                     value={form.paidById}
                                     onChange={(e) => setForm((f) => ({ ...f, paidById: e.target.value }))}
-                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors"
+                                    disabled={submitting}
+                                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
                                 >
                                     {balanceData?.balances.map((m) => (
-                                        <option key={m.userId} value={m.userId}>
-                                            {m.name}
-                                        </option>
+                                        <option key={m.userId} value={m.userId}>{m.name}</option>
                                     ))}
                                 </select>
                             </div>
 
-                            {/* Inline error */}
-                            {formError && (
-                                <p className="text-red-400 text-xs">{formError}</p>
-                            )}
+                            {formError && <p className="text-red-400 text-xs">{formError}</p>}
 
-                            {/* Actions */}
                             <div className="flex gap-3 pt-2">
                                 <button
                                     type="button"
                                     onClick={() => setModalOpen(false)}
-                                    className="flex-1 rounded-lg border border-gray-700 py-2.5 text-sm text-gray-400 hover:border-gray-500 hover:text-white transition-colors"
+                                    disabled={submitting}
+                                    className="flex-1 rounded-lg border border-gray-700 py-2.5 text-sm text-gray-400 hover:border-gray-500 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors py-2.5 text-sm font-medium text-white"
+                                    className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors py-2.5 text-sm font-medium text-white"
                                 >
+                                    {submitting && <Spinner className="w-4 h-4" />}
                                     {submitting ? "Adding…" : "Add Expense"}
                                 </button>
                             </div>

@@ -195,6 +195,27 @@ These approaches do not guarantee minimal transactions.
 
 ---
 
+## 9. API Documentation & Testing
+
+### API Endpoints List
+
+- POST /api/groups  
+  Create a new expense group
+
+- POST /api/groups/:id/expenses  
+  Add expense to a group
+
+- GET /api/groups/:id/balances  
+  Calculate net balances
+
+- GET /api/groups/:id/optimize  
+  Apply minimum cash flow optimization
+
+### API Testing Screenshots
+(To be added after backend implementation using Thunder Client / Postman)
+
+---
+
 ## 10. Module-wise Development & Deliverables
 
 ### Checkpoint 1: Research & Planning
@@ -231,6 +252,35 @@ These approaches do not guarantee minimal transactions.
 
 ---
 
+## 11. End-to-End Workflow
+
+1. User creates a group.
+2. Members are added to the group.
+3. Expenses are logged with payer and amount.
+4. System calculates net balance per user.
+5. Optimization engine processes balances.
+6. Simplified settlements are generated.
+7. User views reduced transaction list.
+
+---
+
+## 12. Demo & Video
+
+- Live Demo Link: (To be added after deployment)
+- Demo Video Link: (To be added before final submission)
+- GitHub Repository: https://github.com/Rudrxxx/YourSplit
+
+---
+
+## 13. Hackathon Deliverables Summary
+
+- Structured full-stack application
+- Graph-based debt optimization algorithm
+- Clean and documented database schema
+- Deployed working MVP
+
+---
+
 ## 14. Team Roles & Responsibilities
 
 | Member Name | Role | Responsibilities |
@@ -239,3 +289,25 @@ These approaches do not guarantee minimal transactions.
 | Rounak Kumar Saw | Backend Developer | API implementation, database integration, testing |
 | Priyanshu Verma | Frontend Developer | UI design, page structure, API integration |
 
+---
+
+## 15. Future Scope & Scalability
+
+### Short-Term
+- Partial payment support
+- Recurring expense automation
+- Improved debt visualization
+
+### Long-Term
+- Multi-currency support
+- Payment gateway integration
+- AI-based expense prediction
+- Microservices-based scaling architecture
+
+---
+
+## 17. Impact
+
+- Reduces number of settlement transactions
+- Improves financial transparency within groups
+- Demonstrates practical use of graph optimization
